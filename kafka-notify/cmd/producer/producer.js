@@ -1,17 +1,5 @@
-// src/producer/producer.js
-
-const { Kafka } = require('kafkajs');
-const express = require('express');
-const bodyParser = require('body-parser');
+const kafka = require('../../pkg/config/kafkaConfig');
 const { User, Notification } = require('../../pkg/models/models');
-
-const app = express();
-app.use(bodyParser.json());
-
-const kafka = new Kafka({
-    clientId: 'kafka-notify',
-    brokers: ['localhost:9092']
-});
 
 const producer = kafka.producer();
 
@@ -27,43 +15,29 @@ const users = [
 
 const findUserById = (id) => users.find(user => user.id === id);
 
-app.post('/send', async (req, res) => {
-    try {
-        const { fromID, toID, message } = req.body;
+const sendNotification = async (fromID, toID, message, type) => {
+    const fromUser = findUserById(fromID);
+    const toUser = findUserById(toID);
 
-        const fromUser = findUserById(fromID);
-        const toUser = findUserById(toID);
-
-        if (!fromUser || !toUser) {
-            return res.status(404).json({ message: 'User not found' });
-        }
-
-        const notification = new Notification(fromUser, toUser, message);
-        const notificationJSON = JSON.stringify(notification);
-
-        await producer.send({
-            topic: 'notifications',
-            messages: [
-                { key: String(toUser.id), value: notificationJSON },
-            ],
-        });
-
-        res.status(200).json({ message: 'Notification sent successfully!' });
-    } catch (err) {
-        console.error('Failed to send notification:', err);
-        res.status(500).json({ message: 'Internal server error' });
+    if (!fromUser || !toUser) {
+        throw new Error('User not found');
     }
-});
 
-app.get('/', (req, res) => {
-    res.json(users);
-});
+    const notification = new Notification(fromUser, toUser, message, type);
+    const notificationJSON = JSON.stringify(notification);
 
-const run = async () => {
-    await producer.connect();
-    app.listen(8080, () => {
-        console.log('Kafka PRODUCER 📨 started at http://localhost:8080');
+    await producer.send({
+        topic: type, // Send to the notification type topic
+        messages: [
+            { key: String(toUser.id), value: notificationJSON },
+        ],
     });
 };
 
+const run = async () => {
+    await producer.connect();
+};
+
 run().catch(console.error);
+
+module.exports = { sendNotification };
