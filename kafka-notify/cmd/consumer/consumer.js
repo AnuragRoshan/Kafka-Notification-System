@@ -1,37 +1,61 @@
 const kafka = require('../../pkg/config/kafkaConfig');
+// const { storeNotification } = require('../../pkg/db/notificationService'); // Import MongoDB storage service
+const RateLimiterFlexible = require('rate-limiter-flexible');
 
 const consumer = kafka.consumer({ groupId: 'notifications-group' });
-const notificationsStore = {
-    transactional: {},
-    promotional: {},
-    useractivities: {}
+
+// Create rate limiters for different channels
+const emailRateLimiter = new RateLimiterFlexible.RateLimiterMemory({
+    points: 10, // Number of notifications allowed per second
+    duration: 1, // Duration in seconds
+});
+
+const whatsappRateLimiter = new RateLimiterFlexible.RateLimiterMemory({
+    points: 25, // Number of notifications allowed per second
+    duration: 1, // Duration in seconds
+});
+
+// Simulated notification sending functions
+const sendWhatsAppNotification = async (to, message) => {
+    console.log(`Sending WhatsApp notification to ${to.name}: ${message}`);
+};
+
+const sendEmailNotification = async (to, message) => {
+    console.log(`Sending Email notification to ${to.name}: ${message}`);
+};
+
+const sendToPreferredChannels = async (notification) => {
+    const { to, message } = notification;
+
+    if (to.preferences.includes('whatsapp')) {
+        try {
+            await whatsappRateLimiter.consume(to.id); // Rate limit by user ID
+            await sendWhatsAppNotification(to, message);
+        } catch (rateLimiterRes) {
+            console.log('WhatsApp rate limit exceeded for user', to.id);
+        }
+    }
+
+    if (to.preferences.includes('email')) {
+        try {
+            await emailRateLimiter.consume(to.id); // Rate limit by user ID
+            await sendEmailNotification(to, message);
+        } catch (rateLimiterRes) {
+            console.log('Email rate limit exceeded for user', to.id);
+        }
+    }
 };
 
 const processNotification = async ({ topic, partition, message }) => {
     const userID = message.key.toString();
     const notification = JSON.parse(message.value.toString());
 
-    if (!notificationsStore[topic][userID]) {
-        notificationsStore[topic][userID] = [];
-    }
-    notificationsStore[topic][userID].push(notification);
+    // Store the notification in MongoDB
+    // await storeNotification(userID, topic, notification);
+    console.log(`Stored ${topic} notification for user ${userID} in MongoDB:`, notification);
 
-    // Example logic to send notifications based on user preferences
-    sendToPreferredChannels(notification);
-
-    console.log(`Received ${topic} notification for user ${userID}:`, notification);
-};
-
-const sendToPreferredChannels = (notification) => {
-    const { to, message, type } = notification;
-    // Here you would integrate with WhatsApp, Email, etc.
-    if (to.preferences.includes('whatsapp')) {
-        sendWhatsAppNotification(to, message);
-    }
-    if (to.preferences.includes('email')) {
-        sendEmailNotification(to, message);
-    }
-    // Add more channels as needed
+    // Send notifications based on user preferences with rate limiting
+    await sendToPreferredChannels(notification);
 };
 
 const run = async () => {
@@ -48,5 +72,3 @@ const run = async () => {
 };
 
 run().catch(console.error);
-
-module.exports = notificationsStore;

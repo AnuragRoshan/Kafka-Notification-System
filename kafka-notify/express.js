@@ -9,8 +9,8 @@ app.use(bodyParser.json());
 // Endpoint to send a notification
 app.post('/send', async (req, res) => {
     try {
-        const { fromID, toID, message, type } = req.body;
-
+        const { fromID, toID, message } = req.body;
+        const type = req.body.topic;
         // Ensure the notification type is valid
         if (!['transactional', 'promotional', 'useractivities'].includes(type)) {
             return res.status(400).json({ message: 'Invalid notification type' });
